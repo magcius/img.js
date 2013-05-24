@@ -251,8 +251,72 @@
             }
         }
 
+        var disposals = {};
+        disposals[0x00] = "none";
+        disposals[0x01] = "no-dispose";
+        disposals[0x02] = "clear";
+        disposals[0x03] = "restore";
+
+        // Early GIF specs said "bit 3" instead of "third bit"
+        disposals[0x04] = "restore";
+
+        function parseGraphicControlExtension(context, stream) {
+            var command = context.command;
+
+            // size, unused
+            readByte(stream);
+
+            var flags = readByte(stream);
+            var delayInHundredths = readWord(stream);
+            var disposal = (flags >> 2) & 0x07;
+
+            command.disposal = disposals[disposal];
+
+            // Convert into milliseconds for easy setTimeout usage
+            command.duration = delayInHundredths * 10;
+
+            var transparentPixel = readByte(stream);
+            if (flags & 0x01)
+                command.transparentPixel = transparentPixel;
+            else
+                command.transparentPixel = null;
+        }
+
+        function parseCommentExtension(context, stream) {
+            var command = context.command;
+            command.type = "comment";
+            command.data = "";
+
+            while (true) {
+                var size = readByte(stream);
+                if (size == 0)
+                    break;
+                command.data += readString(size);
+            }
+        }
+
+        var extensions = {};
+        extensions[0xF9] = parseGraphicControlExtension;
+        extensions[0xFE] = parseCommentExtension;
+
+        function parseExtension(context, stream) {
+            var extensionType = readByte(stream);
+
+            var func = extensions[extensionType];
+            if (func) {
+                func(context, stream);
+            } else {
+                // Seek until block terminator
+                while (true) {
+                    if (readByte(stream) == 0)
+                        break;
+                }
+            }
+        }
+
         function parseImageBlock(context, stream) {
             var command = context.command;
+            command.type = "draw";
             command.left = readWord(stream);
             command.top = readWord(stream);
             command.width = readWord(stream);
@@ -301,7 +365,7 @@
             var context;
             function resetContext() {
                 context = { globalColorTable: globalColorTable,
-                            command: { type: "draw" } };
+                            command: {} };
             }
 
             function flush() {
@@ -316,6 +380,9 @@
                 switch (blockType) {
                     case 0x3B: // Image trailer
                         go = false;
+                        break;
+                    case 0x21: // Extension
+                        parseExtension(context, stream);
                         break;
                     case 0x2C: // Image block
                         parseImageBlock(context, stream);
