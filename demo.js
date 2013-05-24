@@ -22,7 +22,7 @@
     }
 
     window.addEventListener('load', function() {
-        loadGif('marbles.gif', function(stream, gif) {
+        loadGif(location.origin + '/marbles.gif', function(gif) {
             var canvas = makeCanvas(gif);
             var ctx = canvas.getContext('2d');
             paintImageBlock(ctx, gif, gif.images[0]);
