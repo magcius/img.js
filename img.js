@@ -295,6 +295,33 @@
             }
         }
 
+        function parsePlainTextExtension(context, stream) {
+            var command = context.command;
+            command.type = "text";
+
+            // size, unused
+            readByte(stream);
+
+            command.left = readWord(stream);
+            command.top = readWord(stream);
+            command.width = readWord(stream);
+            command.height = readWord(stream);
+            command.cellWidth = readByte(stream);
+            command.cellHeight = readByte(stream);
+
+            command.fgColor = readByte(stream);
+            command.bgColor = readByte(stream);
+
+            while (true) {
+                var size = readByte(stream);
+                if (size == 0)
+                    break;
+                command.data += readString(size);
+            }
+
+            context.flush();
+        }
+
         var extensions = {};
         extensions[0xF9] = parseGraphicControlExtension;
         extensions[0xFE] = parseCommentExtension;
@@ -346,6 +373,8 @@
             // This contains a large array of indexes into the color table.
             command.indices = new Uint8Array(command.width * command.height);
             parseLzw(command.indices, readByteFromSubBlocks, minCodeSize);
+
+            context.flush();
         }
 
         function parseGif(stream) {
@@ -362,15 +391,16 @@
 
             gif.commands = [];
 
-            var context;
-            function resetContext() {
-                context = { globalColorTable: globalColorTable,
-                            command: {} };
-            }
-
             function flush() {
                 gif.commands.push(context.command);
                 resetContext();
+            }
+
+            var context;
+            function resetContext() {
+                context = { globalColorTable: globalColorTable,
+                            flush: flush,
+                            command: {} };
             }
 
             resetContext();
@@ -386,7 +416,6 @@
                         break;
                     case 0x2C: // Image block
                         parseImageBlock(context, stream);
-                        flush();
                         break;
                     default: // Unknown block
                         break;
