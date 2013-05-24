@@ -251,14 +251,14 @@
             }
         }
 
-        function parseImageBlock(stream, globalColorTable) {
-            var command = { type: "draw" };
+        function parseImageBlock(context, stream) {
+            var command = context.command;
             command.left = readWord(stream);
             command.top = readWord(stream);
             command.width = readWord(stream);
             command.height = readWord(stream);
             var flags = readByte(stream);
-            command.colorTable = parseColorTable(stream, flags) || globalColorTable;
+            command.colorTable = parseColorTable(stream, flags) || context.globalColorTable;
 
             var minCodeSize = readByte(stream);
             var pos, size;
@@ -282,8 +282,6 @@
             // This contains a large array of indexes into the color table.
             command.indices = new Uint8Array(command.width * command.height);
             parseLzw(command.indices, readByteFromSubBlocks, minCodeSize);
-
-            return command;
         }
 
         function parseGif(stream) {
@@ -300,6 +298,18 @@
 
             gif.commands = [];
 
+            var context;
+            function resetContext() {
+                context = { globalColorTable: globalColorTable,
+                            command: { type: "draw" } };
+            }
+
+            function flush() {
+                gif.commands.push(context.command);
+                resetContext();
+            }
+
+            resetContext();
             var go = true;
             while (go) {
                 var blockType = readByte(stream);
@@ -308,7 +318,8 @@
                         go = false;
                         break;
                     case 0x2C: // Image block
-                        gif.commands.push(parseImageBlock(stream, globalColorTable));
+                        parseImageBlock(context, stream);
+                        flush();
                         break;
                     default: // Unknown block
                         break;
