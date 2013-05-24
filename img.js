@@ -9,6 +9,10 @@
     }
 
     function gifWorker(global) {
+        function log() {
+            global.postMessage({ log: [].slice.call(arguments) });
+        }
+
         function makeStream(buffer) {
             var stream = new DataView(buffer);
             stream.length = buffer.byteLength;
@@ -446,7 +450,10 @@
     function loadGif(filename, callback) {
         var w = makeWorkerFromFunction(gifWorker);
         w.addEventListener('message', function(event) {
-            callback(event.data.gif);
+            if (event.data.log)
+                console.log("worker log", event.data.log);
+            else if (event.data.gif)
+                callback(event.data.gif);
         });
         w.postMessage({ filename: filename });
     }
