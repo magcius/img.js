@@ -251,14 +251,14 @@
             }
         }
 
-        function parseImageBlock(stream) {
-            var img = {};
-            img.left = readWord(stream);
-            img.top = readWord(stream);
-            img.width = readWord(stream);
-            img.height = readWord(stream);
-            img.flags = readByte(stream);
-            img.colorTable = parseColorTable(stream, img.flags);
+        function parseImageBlock(stream, globalColorTable) {
+            var command = { type: "draw" };
+            command.left = readWord(stream);
+            command.top = readWord(stream);
+            command.width = readWord(stream);
+            command.height = readWord(stream);
+            var flags = readByte(stream);
+            command.colorTable = parseColorTable(stream, flags) || globalColorTable;
 
             var minCodeSize = readByte(stream);
             var pos, size;
@@ -279,27 +279,26 @@
                 return readByte(stream);
             }
 
-            // The output contains a large array of indexes into
-            // the color table.
-            img.output = new Uint8Array(img.width * img.height);
-            parseLzw(img.output, readByteFromSubBlocks, minCodeSize);
+            // This contains a large array of indexes into the color table.
+            command.indices = new Uint8Array(command.width * command.height);
+            parseLzw(command.indices, readByteFromSubBlocks, minCodeSize);
 
-            return img;
+            return command;
         }
 
         function parseGif(stream) {
             var gif = {};
 
-            gif.header = readString(stream, 3);
-            gif.version = readString(stream, 3);
-            gif.lsWidth = readWord(stream);
-            gif.lsHeight = readWord(stream);
-            gif.flags = readByte(stream);
-            gif.bgColor = readByte(stream);
-            gif.pixelAspectRatio = readByte(stream);
-            gif.colorTable = parseColorTable(stream, gif.flags);
+            var header = readString(stream, 3);
+            var version = readString(stream, 3);
+            gif.width = readWord(stream);
+            gif.height = readWord(stream);
+            var flags = readByte(stream);
+            var bgColor = readByte(stream); // unused
+            var pixelAspectRatio = readByte(stream);
+            var globalColorTable = parseColorTable(stream, flags);
 
-            gif.images = [];
+            gif.commands = [];
 
             var go = true;
             while (go) {
@@ -309,7 +308,7 @@
                         go = false;
                         break;
                     case 0x2C: // Image block
-                        gif.images.push(parseImageBlock(stream));
+                        gif.commands.push(parseImageBlock(stream, globalColorTable));
                         break;
                     default: // Unknown block
                         break;

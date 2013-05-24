@@ -2,31 +2,38 @@
 
     function makeCanvas(gif) {
         var canvas = document.createElement("canvas");
-        canvas.width = gif.lsWidth;
-        canvas.height = gif.lsHeight;
+        canvas.width = gif.width;
+        canvas.height = gif.height;
         return canvas;
     }
 
-    function paintImageBlock(ctx, gif, img) {
-        var tbl = img.colorTable || gif.colorTable;
-        var imgData = ctx.getImageData(img.left, img.top, img.width, img.height);
-        var i, o = 0, n = img.output.length;
+    function drawCommand(ctx, command) {
+        var imgData = ctx.getImageData(command.left, command.top, command.width, command.height);
+        var i, o = 0, n = command.indices.length;
         for (i = 0; i < n; i++) {
-            var pixel = img.output[i];
-            imgData.data[o++] = tbl[pixel].r;
-            imgData.data[o++] = tbl[pixel].g;
-            imgData.data[o++] = tbl[pixel].b;
+            var index = command.indices[i];
+            imgData.data[o++] = command.colorTable[index].r;
+            imgData.data[o++] = command.colorTable[index].g;
+            imgData.data[o++] = command.colorTable[index].b;
             imgData.data[o++] = 255;
         }
-        ctx.putImageData(imgData, img.left, img.top);
+        ctx.putImageData(imgData, command.left, command.top);
     }
+
+    var commands = {
+    	'draw': drawCommand,
+    };
 
     window.addEventListener('load', function() {
         loadGif(location.origin + '/marbles.gif', function(gif) {
             var canvas = makeCanvas(gif);
-            var ctx = canvas.getContext('2d');
-            paintImageBlock(ctx, gif, gif.images[0]);
             document.body.appendChild(canvas);
+            var ctx = canvas.getContext('2d');
+
+            gif.commands.forEach(function(command) {
+            	var func = commands[command.type];
+            	func(ctx, command);
+            });
         });
     });
 
