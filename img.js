@@ -51,7 +51,7 @@
                 return color;
             }
 
-            if (flags & 0x80 != 0) {
+            if ((flags & 0x80) != 0) {
                 var sizeField = flags & 0x07;
                 var count = 1 << (sizeField + 1);
                 return collect(stream, parseColor, count);
