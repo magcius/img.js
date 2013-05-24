@@ -10,12 +10,20 @@
     function drawCommand(ctx, command) {
         var imgData = ctx.getImageData(command.left, command.top, command.width, command.height);
         var i, o = 0, n = command.indices.length;
+        var data = imgData.data;
         for (i = 0; i < n; i++) {
             var index = command.indices[i];
-            imgData.data[o++] = command.colorTable[index].r;
-            imgData.data[o++] = command.colorTable[index].g;
-            imgData.data[o++] = command.colorTable[index].b;
-            imgData.data[o++] = 255;
+            if (index == command.transparentPixel) {
+            	data[o++] = 0;
+            	data[o++] = 0;
+            	data[o++] = 0;
+            	data[o++] = 0;
+            } else {
+	            data[o++] = command.colorTable[index].r;
+	            data[o++] = command.colorTable[index].g;
+	            data[o++] = command.colorTable[index].b;
+	            data[o++] = 255;
+            }
         }
         ctx.putImageData(imgData, command.left, command.top);
     }
