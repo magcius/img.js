@@ -364,7 +364,7 @@
                 // but oh well, we have to support it.
 
                 // This traps the initial condition as well, as
-                // both are undefined :)
+                // both are undefined
                 if (pos === size) {
                     size = readByte(stream);
                     pos = 0;
@@ -403,26 +403,26 @@
             var context;
             function resetContext() {
                 context = { globalColorTable: globalColorTable,
-                            flush: flush,
-                            command: {} };
-            }
+                    flush: flush,
+                    command: {} };
+                }
 
-            resetContext();
-            var go = true;
-            while (go) {
-                var blockType = readByte(stream);
-                switch (blockType) {
+                resetContext();
+                var go = true;
+                while (go) {
+                    var blockType = readByte(stream);
+                    switch (blockType) {
                     case 0x3B: // Image trailer
-                        go = false;
-                        break;
+                    go = false;
+                    break;
                     case 0x21: // Extension
-                        parseExtension(context, stream);
-                        break;
+                    parseExtension(context, stream);
+                    break;
                     case 0x2C: // Image block
-                        parseImageBlock(context, stream);
-                        break;
+                    parseImageBlock(context, stream);
+                    break;
                     default: // Unknown block
-                        break;
+                    break;
                 }
             }
 
