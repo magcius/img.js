@@ -24,16 +24,43 @@
     	'draw': drawCommand,
     };
 
+    // default duration is 1/10th of a second
+    var DEFAULT_DURATION = (1 / 10) * 1000;
+    var MIN_DURATION = 20;
+
+    function runCommands(ctx, gif) {
+    	var command;
+    	var idx = 0;
+
+    	function runCommand() {
+    		command = gif.commands[idx];
+    		var func = commands[command.type];
+    		func(ctx, command);
+    		scheduleNextCommand();
+    	}
+
+    	function nextCommand() {
+    		idx = (idx + 1) % gif.commands.length;
+    		runCommand();
+    	}
+
+    	function scheduleNextCommand() {
+    		var duration = command.duration;
+    		if (duration === undefined || duration < MIN_DURATION)
+    			duration = DEFAULT_DURATION;
+
+    		setTimeout(nextCommand, duration);
+    	}
+
+    	runCommand();
+    }
+
     window.addEventListener('load', function() {
-        loadGif(location.origin + '/marbles.gif', function(gif) {
+        loadGif(location.origin + '/light.gif', function(gif) {
             var canvas = makeCanvas(gif);
             document.body.appendChild(canvas);
             var ctx = canvas.getContext('2d');
-
-            gif.commands.forEach(function(command) {
-            	var func = commands[command.type];
-            	func(ctx, command);
-            });
+            runCommands(ctx, gif);
         });
     });
 
