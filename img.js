@@ -341,7 +341,7 @@
         // Early GIF specs said "bit 3" instead of "third bit"
         disposals[0x04] = "remove";
 
-        function parseGraphicControlExtension(command, stream) {
+        function parseGraphicControlExtension(frame, stream) {
             // size, unused
             readByte(stream);
 
@@ -349,61 +349,61 @@
             var delayInHundredths = readWord(stream);
             var disposal = (flags >> 2) & 0x07;
 
-            command.disposal = disposals[disposal];
+            frame.disposal = disposals[disposal];
 
             // Convert into milliseconds for easy setTimeout usage
-            command.duration = delayInHundredths * 10;
+            frame.duration = delayInHundredths * 10;
 
             var transparentPixel = readByte(stream);
             if (flags & 0x01)
-                command.transparentPixel = transparentPixel;
+                frame.transparentPixel = transparentPixel;
             else
-                command.transparentPixel = null;
+                frame.transparentPixel = null;
 
             // block terminator
             stream.pos++;
         }
 
-        function parseCommentExtension(command, stream) {
-            command.type = "comment";
-            command.data = "";
+        function parseCommentExtension(frame, stream) {
+            frame.type = "comment";
+            frame.data = "";
 
             while (true) {
                 var size = readByte(stream);
                 if (size == 0)
                     break;
-                command.data += readString(size);
+                frame.data += readString(size);
             }
         }
 
-        function parsePlainTextExtension(command, stream) {
-            command.type = "text";
+        function parsePlainTextExtension(frame, stream) {
+            frame.type = "text";
 
             // size, unused
             readByte(stream);
 
-            command.left = readWord(stream);
-            command.top = readWord(stream);
-            command.width = readWord(stream);
-            command.height = readWord(stream);
-            command.cellWidth = readByte(stream);
-            command.cellHeight = readByte(stream);
+            frame.left = readWord(stream);
+            frame.top = readWord(stream);
+            frame.width = readWord(stream);
+            frame.height = readWord(stream);
+            frame.cellWidth = readByte(stream);
+            frame.cellHeight = readByte(stream);
 
-            command.fgColor = readByte(stream);
-            command.bgColor = readByte(stream);
-            command.data = "";
+            frame.fgColor = readByte(stream);
+            frame.bgColor = readByte(stream);
+            frame.data = "";
 
             while (true) {
                 var size = readByte(stream);
                 if (size == 0)
                     break;
-                command.data += readString(stream, size);
+                frame.data += readString(stream, size);
             }
 
-            command.flush();
+            frame.flush();
         }
 
-        function parseNetscapeExtension(command, stream) {
+        function parseNetscapeExtension(frame, stream) {
             // auth code, unused
             stream.pos += 3;
 
@@ -423,7 +423,7 @@
         var appExtensions = {};
         appExtensions["NETSCAPE"] = parseNetscapeExtension;
 
-        function parseApplicationExtension(command, stream) {
+        function parseApplicationExtension(frame, stream) {
             // size, unused
             readByte(stream);
 
@@ -431,7 +431,7 @@
 
             var func = appExtensions[identifier];
             if (func)
-                func(command, stream);
+                func(frame, stream);
             else
                 seekUntil0(stream);
         }
@@ -442,24 +442,24 @@
         extensions[0xFE] = parseCommentExtension;
         extensions[0xFF] = parseApplicationExtension;
 
-        function parseExtension(command, stream) {
+        function parseExtension(frame, stream) {
             var extensionType = readByte(stream);
 
             var func = extensions[extensionType];
             if (func)
-                func(command, stream);
+                func(frame, stream);
             else
                 seekUntil0(stream);
         }
 
-        function parseImageBlock(command, stream) {
-            command.type = "draw";
-            command.left = readWord(stream);
-            command.top = readWord(stream);
-            command.width = readWord(stream);
-            command.height = readWord(stream);
+        function parseImageBlock(frame, stream) {
+            frame.type = "draw";
+            frame.left = readWord(stream);
+            frame.top = readWord(stream);
+            frame.width = readWord(stream);
+            frame.height = readWord(stream);
             var flags = readByte(stream);
-            command.lct = parseColorTable(stream, flags);
+            frame.lct = parseColorTable(stream, flags);
 
             var minCodeSize = readByte(stream);
             var pos, size;
@@ -481,15 +481,15 @@
             }
 
             // This contains a large array of indexes into the color table.
-            command.indices = new Uint8Array(command.width * command.height);
-            parseLzw(command.indices, readByteFromSubBlocks, minCodeSize);
+            frame.indices = new Uint8Array(frame.width * frame.height);
+            parseLzw(frame.indices, readByteFromSubBlocks, minCodeSize);
 
             // LZW might have an EOF code before we read the entire
             // set of sub blocks. Look for a block terminator.
             if (pos !== 0)
                 seekUntil0(stream);
 
-            command.flush();
+            frame.flush();
         }
 
         var blocks = {};
@@ -518,21 +518,21 @@
                 gct: gct,
             });
 
-            var command;
-            function resetCommand() {
-                command = { flush: flush };
+            var frame;
+            function resetFrame() {
+                frame = { flush: flush };
             }
 
             function flush() {
-                delete command.flush;
+                delete frame.flush;
                 global.postMessage({
-                    type: "command",
-                    command: command,
+                    type: "frame",
+                    frame: frame,
                 });
-                resetCommand();
+                resetFrame();
             }
 
-            resetCommand();
+            resetFrame();
             while (true) {
                 var blockType = readByte(stream);
                 if (blockType == 0x3B)
@@ -540,7 +540,7 @@
 
                 var func = blocks[blockType];
                 if (func)
-                    func(command, stream);
+                    func(frame, stream);
             }
 
             global.postMessage({
@@ -588,7 +588,7 @@
     }
 
     // GIF Runner -- uses <canvas> and DOM tricks to take the above
-    // commands and paint them.
+    // frames and paint them.
     function runGif(filename) {
         var container = document.createElement("gif-container");
         container.style.position = "relative";
@@ -596,19 +596,18 @@
         var width, height;
         var gct;
 
-        // Images from composite commands are added to the
-        // temporary canvas first, and at the start of a new
-        // composite command, they're "disposed" of into the
-        // composite canvas if necessary.
+        // Images from composite frames are added to the temporary
+        // canvas first, and at the start of a new frame, they're
+        // "disposed" of into the composite canvas if necessary.
         var compositeCanvas, temporaryCanvas;
 
-        var commands = [];
+        var frames = [];
 
         // By default, loop forever.
         var maxLoops = 0;
 
         var finished = false;
-        var waitingForCommand = true;
+        var waitingForFrame = true;
 
         function makeCanvas() {
             var canvas = document.createElement("canvas");
@@ -628,14 +627,14 @@
             container.appendChild(temporaryCanvas);
         }
 
-        function disposeImage(tempCanvas, compCanvas, command) {
+        function disposeImage(tempCanvas, compCanvas, frame) {
             var tempCtx = tempCanvas.getContext('2d');
             var compCtx = compCanvas.getContext('2d');
 
             compCtx.save();
-            switch (command.disposal) {
+            switch (frame.disposal) {
                 case "composite":
-                // In a composite command, the contents of the
+                // In a composite disposal, the contents of the
                 // temporary composited onto the underlying canvas.
                 compCtx.drawImage(tempCanvas, 0, 0);
                 break;
@@ -644,7 +643,7 @@
                 // but no GIF decoder cares about the bgColor.
                 // Restore to the default color, transparent black.
                 compCtx.fillStyle = 'rgba(0, 0, 0, 0)';
-                compCtx.fillRect(command.left, command.top, command.width, command.height);
+                compCtx.fillRect(frame.left, frame.top, frame.width, frame.height);
                 break;
                 case "remove":
                 // In the case of remove, we don't composite
@@ -659,16 +658,16 @@
             tempCtx.clearRect(0, 0, tempCanvas.width, tempCanvas.height);
         }
 
-        function drawCommand(canvas, command) {
+        function onFrame_draw(canvas, frame) {
             var ctx = canvas.getContext('2d');
-            var imgData = ctx.getImageData(command.left, command.top, command.width, command.height);
-            var i, o = 0, n = command.indices.length;
+            var imgData = ctx.getImageData(frame.left, frame.top, frame.width, frame.height);
+            var i, o = 0, n = frame.indices.length;
             var data = imgData.data;
-            var colorTable = command.lct || gct;
+            var colorTable = frame.lct || gct;
 
             for (i = 0; i < n; i++) {
-                var index = command.indices[i];
-                if (index == command.transparentPixel) {
+                var index = frame.indices[i];
+                if (index == frame.transparentPixel) {
                     data[o++] = 0;
                     data[o++] = 0;
                     data[o++] = 0;
@@ -680,14 +679,14 @@
                     data[o++] = 255;
                 }
             }
-            ctx.putImageData(imgData, command.left, command.top);
+            ctx.putImageData(imgData, frame.left, frame.top);
         }
 
-        function textCommand(canvas, command) {
+        function onFrame_text(canvas, frame) {
             var ctx = canvas.getContext('2d');
 
             function setFont() {
-                var size = command.cellHeight;
+                var size = frame.cellHeight;
                 ctx.font = size + "px \"Courier New\"";
             }
 
@@ -697,25 +696,25 @@
             }
 
             function drawChar(char, cellX, cellY) {
-                var x = command.left + command.cellWidth * cellX;
-                var y = command.top + command.cellHeight * (cellY + 0.8);
+                var x = frame.left + frame.cellWidth * cellX;
+                var y = frame.top + frame.cellHeight * (cellY + 0.8);
 
                 var code = char.charCodeAt(0);
                 ctx.fillText(char, x, y);
             }
 
             ctx.save();
-            ctx.fillStyle = styleFromColor(command.bgColor);
-            ctx.fillRect(command.left, command.top, command.width, command.height);
+            ctx.fillStyle = styleFromColor(frame.bgColor);
+            ctx.fillRect(frame.left, frame.top, frame.width, frame.height);
             ctx.restore();
 
             ctx.save();
             setFont();
-            ctx.fillStyle = styleFromColor(command.fgColor);
+            ctx.fillStyle = styleFromColor(frame.fgColor);
             var cellX = 0, cellY = 0;
-            var charsPerLine = (command.width / command.cellWidth) | 0;
+            var charsPerLine = (frame.width / frame.cellWidth) | 0;
 
-            command.data.split('').forEach(function(char) {
+            frame.data.split('').forEach(function(char) {
                 drawChar(char, cellX, cellY);
 
                 cellX++;
@@ -727,37 +726,37 @@
             ctx.restore();
         }
 
-        var commandTypes = {
-            "draw": drawCommand,
-            "text": textCommand,
+        var frameTypes = {
+            "draw": onFrame_draw,
+            "text": onFrame_text,
         };
 
         // default duration is 1/10th of a second
         var DEFAULT_DURATION = (1 / 10) * 1000;
         var MIN_DURATION = 20;
 
-        var command;
+        var frame;
         var idx = 0;
         var loopCount = 0;
 
-        function runCommand() {
-            command = commands[idx];
-            var func = commandTypes[command.type];
+        function runFrame() {
+            frame = frames[idx];
+            var func = frameTypes[frame.type];
             if (func) {
-                // Commands are always first drawn into the temp
+                // Frames are always first drawn into the temp
                 // canvas. The disposal at the start of the next
-                // next command will put things into the
+                // next frame will put things into the
                 // composite canvas if wanted.
-                func(temporaryCanvas, command);
+                func(temporaryCanvas, frame);
             } else {
-                console.log("Unknown command " + command.type);
+                console.log("Unknown frame type " + frame.type);
             }
 
-            scheduleNextCommand();
+            scheduleNextFrame();
         }
 
-        function nextCommand() {
-            if (idx+1 >= commands.length) {
+        function nextFrame() {
+            if (idx+1 >= frames.length) {
                 if (finished) {
                     loopCount++;
 
@@ -768,32 +767,32 @@
 
                     idx = 0;
                 } else {
-                    // Pause until we receive the next command.
-                    waitingForCommand = true;
+                    // Pause until we receive the next frame.
+                    waitingForFrame = true;
                 }
             } else {
                 idx++;
             }
 
-            if (command)
-                disposeImage(temporaryCanvas, compositeCanvas, command);
-            runCommand();
+            if (frame)
+                disposeImage(temporaryCanvas, compositeCanvas, frame);
+            runFrame();
         }
 
-        function scheduleNextCommand() {
-            var duration = command.duration;
+        function scheduleNextFrame() {
+            var duration = frame.duration;
             if (duration === undefined || duration < MIN_DURATION)
                 duration = DEFAULT_DURATION;
 
-            setTimeout(nextCommand, duration);
+            setTimeout(nextFrame, duration);
         }
 
         function maybeUnpause() {
-            if (!waitingForCommand)
+            if (!waitingForFrame)
                 return;
 
-            nextCommand();
-            waitingForCommand = false;
+            nextFrame();
+            waitingForFrame = false;
         }
 
         function onMessage_dimensions(message) {
@@ -810,8 +809,8 @@
             maxLoops = message.loopCount;
         }
 
-        function onMessage_command(message) {
-            commands.push(message.command);
+        function onMessage_frame(message) {
+            frames.push(message.frame);
             maybeUnpause();
         }
 
@@ -824,7 +823,7 @@
         messages["dimensions"] = onMessage_dimensions;
         messages["gct"] = onMessage_gct;
         messages["looping"] = onMessage_looping;
-        messages["command"] = onMessage_command;
+        messages["frame"] = onMessage_frame;
         messages["finished"] = onMessage_finished;
 
         function onMessage(message) {
