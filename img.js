@@ -293,6 +293,9 @@
                 command.transparentPixel = transparentPixel;
             else
                 command.transparentPixel = null;
+
+            // block terminator
+            stream.pos++;
         }
 
         function parseCommentExtension(gif, command, stream) {
