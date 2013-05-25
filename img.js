@@ -576,7 +576,10 @@
 
     // GIF Runner -- uses <canvas> and DOM tricks to take the above
     // commands and paint them.
-    function runGif(gif) {
+    function runGif(filename) {
+        var container = document.createElement("gif-container");
+        container.style.position = "relative";
+
         function makeCanvas(gif) {
             var canvas = document.createElement("canvas");
             canvas.width = gif.width;
@@ -693,7 +696,7 @@
         var DEFAULT_DURATION = (1 / 10) * 1000;
         var MIN_DURATION = 20;
 
-        function run() {
+        function run(gif) {
             var command;
             var idx = 0;
             var loopCount = 0;
@@ -705,8 +708,6 @@
             var compositeCanvas = makeCanvas(gif);
             var temporaryCanvas = makeCanvas(gif);
 
-            var container = document.createElement("gif-container");
-            container.style.position = "relative";
             container.appendChild(compositeCanvas);
             container.appendChild(temporaryCanvas);
 
@@ -752,14 +753,15 @@
             }
 
             runCommand();
-
-            return container;
         }
 
-        return run();
+        loadGif(filename, function(gif) {
+            run(gif);
+        });
+
+        return container;
     }
 
-    exports.loadGif = loadGif;
     exports.runGif = runGif;
 
 })(window);

@@ -1,10 +1,8 @@
 (function(exports) {
 
     window.addEventListener('load', function() {
-        loadGif(location.origin + '/bob.gif', function(gif) {
-            var gif = runGif(gif);
-            document.body.appendChild(gif);
-        });
+        var gif = runGif(location.origin + '/bob.gif');
+        document.body.appendChild(gif);
     });
 
 })(window);
