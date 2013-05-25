@@ -256,13 +256,14 @@
         }
 
         var disposals = {};
-        disposals[0x00] = "none";
-        disposals[0x01] = "no-dispose";
-        disposals[0x02] = "clear";
-        disposals[0x03] = "restore";
-
+        // GIF spec says "does nothing", but all GIF decoders
+        // just assume it means no dispose.
+        disposals[0x00] = "composite";
+        disposals[0x01] = "composite";
+        disposals[0x02] = "clearArea";
+        disposals[0x03] = "remove";
         // Early GIF specs said "bit 3" instead of "third bit"
-        disposals[0x04] = "restore";
+        disposals[0x04] = "remove";
 
         function parseGraphicControlExtension(context, stream) {
             var command = context.command;
