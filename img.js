@@ -405,16 +405,18 @@
 
             var context;
             function resetContext() {
-                context = { globalColorTable: globalColorTable,
+                context = {
+                    globalColorTable: globalColorTable,
                     flush: flush,
-                    command: {} };
-                }
+                    command: {},
+                };
+            }
 
-                resetContext();
-                var go = true;
-                while (go) {
-                    var blockType = readByte(stream);
-                    switch (blockType) {
+            resetContext();
+            var go = true;
+            while (go) {
+                var blockType = readByte(stream);
+                switch (blockType) {
                     case 0x3B: // Image trailer
                     go = false;
                     break;
