@@ -489,7 +489,7 @@
     }
 
     // GIF Runner -- uses <canvas> and DOM tricks to take the above
-    // commands and paint htem.
+    // commands and paint them.
     function makeCanvas(gif) {
         var canvas = document.createElement("canvas");
         canvas.width = gif.width;
