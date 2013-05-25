@@ -645,6 +645,7 @@
     // frames and paint them.
     function runGif(filename) {
         var container = document.createElement("gif-container");
+        container.style.display = "inline-block";
         container.style.position = "relative";
 
         var width, height;
@@ -673,7 +674,10 @@
             return canvas;
         }
 
-        function makeCanvases() {
+        function makeDOM() {
+            container.style.width = width + "px";
+            container.style.height = height + "px";
+
             compositeCanvas = makeCanvas();
             temporaryCanvas = makeCanvas();
 
@@ -852,7 +856,7 @@
         function onMessage_dimensions(message) {
             width = message.width;
             height = message.height;
-            makeCanvases();
+            makeDOM();
         }
 
         function onMessage_gct(message) {
