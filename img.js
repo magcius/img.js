@@ -333,7 +333,7 @@
                 command.data += readString(size);
             }
 
-            flushCommand(gif, command);
+            command.flush();
         }
 
         function parseNetscapeExtension(gif, command, stream) {
@@ -371,6 +371,7 @@
 
         var extensions = {};
         extensions[0xF9] = parseGraphicControlExtension;
+        extensions[0x01] = parsePlainTextExtension;
         extensions[0xFE] = parseCommentExtension;
         extensions[0xFF] = parseApplicationExtension;
 
