@@ -275,9 +275,7 @@
         // Early GIF specs said "bit 3" instead of "third bit"
         disposals[0x04] = "remove";
 
-        function parseGraphicControlExtension(gif, context, stream) {
-            var command = context.command;
-
+        function parseGraphicControlExtension(gif, command, stream) {
             // size, unused
             readByte(stream);
 
@@ -297,8 +295,7 @@
                 command.transparentPixel = null;
         }
 
-        function parseCommentExtension(gif, context, stream) {
-            var command = context.command;
+        function parseCommentExtension(gif, command, stream) {
             command.type = "comment";
             command.data = "";
 
@@ -310,8 +307,7 @@
             }
         }
 
-        function parsePlainTextExtension(gif, context, stream) {
-            var command = context.command;
+        function parsePlainTextExtension(gif, command, stream) {
             command.type = "text";
 
             // size, unused
@@ -334,10 +330,10 @@
                 command.data += readString(size);
             }
 
-            context.flush();
+            flushCommand(gif, command);
         }
 
-        function parseNetscapeExtension(gif, context, stream) {
+        function parseNetscapeExtension(gif, command, stream) {
             // auth code, unused
             stream.pos += 3;
 
@@ -357,7 +353,7 @@
         var appExtensions = {};
         appExtensions["NETSCAPE"] = parseNetscapeExtension;
 
-        function parseApplicationExtension(gif, context, stream) {
+        function parseApplicationExtension(gif, command, stream) {
             // size, unused
             readByte(stream);
 
@@ -365,7 +361,7 @@
 
             var func = appExtensions[identifier];
             if (func)
-                func(gif, context, stream);
+                func(gif, command, stream);
             else
                 seekUntil0(stream);
         }
@@ -375,18 +371,17 @@
         extensions[0xFE] = parseCommentExtension;
         extensions[0xFF] = parseApplicationExtension;
 
-        function parseExtension(gif, context, stream) {
+        function parseExtension(gif, command, stream) {
             var extensionType = readByte(stream);
 
             var func = extensions[extensionType];
             if (func)
-                func(gif, context, stream);
+                func(gif, command, stream);
             else
                 seekUntil0(stream);
         }
 
-        function parseImageBlock(gif, context, stream) {
-            var command = context.command;
+        function parseImageBlock(gif, command, stream) {
             command.type = "draw";
             command.left = readWord(stream);
             command.top = readWord(stream);
@@ -418,7 +413,7 @@
             command.indices = new Uint8Array(command.width * command.height);
             parseLzw(command.indices, readByteFromSubBlocks, minCodeSize);
 
-            context.flush();
+            command.flush();
         }
 
         var blocks = {};
@@ -439,20 +434,18 @@
 
             gif.commands = [];
 
+            var command;
+            function resetCommand() {
+                command = { flush: flush };
+            }
+
             function flush() {
-                gif.commands.push(context.command);
-                resetContext();
+                delete command.flush;
+                gif.commands.push(command);
+                resetCommand();
             }
 
-            var context;
-            function resetContext() {
-                context = {
-                    flush: flush,
-                    command: {},
-                };
-            }
-
-            resetContext();
+            resetCommand();
             while (true) {
                 var blockType = readByte(stream);
                 if (blockType == 0x3B)
@@ -460,7 +453,7 @@
 
                 var func = blocks[blockType];
                 if (func)
-                    func(gif, context, stream);
+                    func(gif, command, stream);
             }
 
             return gif;
