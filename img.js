@@ -152,6 +152,7 @@
             console.log(readBits(11).toString(2));
         }
 
+        var MAX_CODE_SIZE = 12;
         function parseLzw(output, readByte, minCodeSize) {
             // The dictionary maps code words to byte sequences and
             // gets updated as time goes on. It might be able to
@@ -250,7 +251,7 @@
                 // If we've reached the last code possible for a
                 // certain code length, that means we need to bump
                 // the code size.
-                if (dictionary.length === (1 << codeSize))
+                if (dictionary.length === (1 << codeSize) && codeSize < MAX_CODE_SIZE)
                     codeSize++;
             }
         }
