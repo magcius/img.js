@@ -601,7 +601,7 @@
                 drawChar(char, cellX, cellY);
 
                 cellX++;
-                if (cellX > charsPerLine) {
+                if (cellX >= charsPerLine) {
                     cellY++;
                     cellX = 0;
                 }
