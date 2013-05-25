@@ -580,7 +580,7 @@
 
             function drawChar(char, cellX, cellY) {
                 var x = command.left + command.cellWidth * cellX;
-                var y = command.top + command.cellHeight * cellY;
+                var y = command.top + command.cellHeight * (cellY + 0.8);
 
                 var code = char.charCodeAt(0);
                 ctx.fillText(char, x, y);
