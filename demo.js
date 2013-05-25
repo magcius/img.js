@@ -1,36 +1,36 @@
 (function(exports) {
 
-	function makeCanvas(gif) {
-		var canvas = document.createElement("canvas");
-		canvas.width = gif.width;
-		canvas.height = gif.height;
+    function makeCanvas(gif) {
+        var canvas = document.createElement("canvas");
+        canvas.width = gif.width;
+        canvas.height = gif.height;
         canvas.style.position = "absolute";
         canvas.style.left = "0px";
         canvas.style.top = "0px";
-		return canvas;
-	}
+        return canvas;
+    }
 
-	function drawCommand(canvas, command) {
+    function drawCommand(canvas, command) {
         var ctx = canvas.getContext('2d');
-		var imgData = ctx.getImageData(command.left, command.top, command.width, command.height);
-		var i, o = 0, n = command.indices.length;
-		var data = imgData.data;
-		for (i = 0; i < n; i++) {
-			var index = command.indices[i];
-			if (index == command.transparentPixel) {
-				data[o++] = 0;
-				data[o++] = 0;
-				data[o++] = 0;
-				data[o++] = 0;
-			} else {
-				data[o++] = command.colorTable[index].r;
-				data[o++] = command.colorTable[index].g;
-				data[o++] = command.colorTable[index].b;
-				data[o++] = 255;
-			}
-		}
-		ctx.putImageData(imgData, command.left, command.top);
-	}
+        var imgData = ctx.getImageData(command.left, command.top, command.width, command.height);
+        var i, o = 0, n = command.indices.length;
+        var data = imgData.data;
+        for (i = 0; i < n; i++) {
+            var index = command.indices[i];
+            if (index == command.transparentPixel) {
+                data[o++] = 0;
+                data[o++] = 0;
+                data[o++] = 0;
+                data[o++] = 0;
+            } else {
+                data[o++] = command.colorTable[index].r;
+                data[o++] = command.colorTable[index].g;
+                data[o++] = command.colorTable[index].b;
+                data[o++] = 255;
+            }
+        }
+        ctx.putImageData(imgData, command.left, command.top);
+    }
 
     function disposeImage(tempCanvas, compCanvas, command) {
         var tempCtx = tempCanvas.getContext('2d');
@@ -63,17 +63,17 @@
         tempCtx.clearRect(0, 0, tempCanvas.width, tempCanvas.height);
     }
 
-	var commands = {
-		'draw': drawCommand,
-	};
+    var commands = {
+        'draw': drawCommand,
+    };
 
     // default duration is 1/10th of a second
     var DEFAULT_DURATION = (1 / 10) * 1000;
     var MIN_DURATION = 20;
 
     function runGif(gif) {
-    	var command;
-    	var idx = 0;
+        var command;
+        var idx = 0;
 
         // Images from composite commands are added to the
         // temporary canvas first, and at the start of a new
@@ -87,41 +87,41 @@
         container.appendChild(compositeCanvas);
         container.appendChild(temporaryCanvas);
 
-    	function runCommand() {
-    		command = gif.commands[idx];
-    		var func = commands[command.type];
+        function runCommand() {
+            command = gif.commands[idx];
+            var func = commands[command.type];
             // Commands are always first drawn into the temp
             // canvas. The disposal at the start of the next
             // next command will put things into the
             // composite canvas if wanted.
-    		func(temporaryCanvas, command);
-    		scheduleNextCommand();
-    	}
+            func(temporaryCanvas, command);
+            scheduleNextCommand();
+        }
 
-    	function nextCommand() {
+        function nextCommand() {
             disposeImage(temporaryCanvas, compositeCanvas, command)
-    		idx = (idx + 1) % gif.commands.length;
-    		runCommand();
-    	}
+            idx = (idx + 1) % gif.commands.length;
+            runCommand();
+        }
 
-    	function scheduleNextCommand() {
-    		var duration = command.duration;
-    		if (duration === undefined || duration < MIN_DURATION)
-    			duration = DEFAULT_DURATION;
+        function scheduleNextCommand() {
+            var duration = command.duration;
+            if (duration === undefined || duration < MIN_DURATION)
+                duration = DEFAULT_DURATION;
 
-    		setTimeout(nextCommand, duration);
-    	}
+            setTimeout(nextCommand, duration);
+        }
 
-    	runCommand();
+        runCommand();
 
         return container;
     }
 
     window.addEventListener('load', function() {
-    	loadGif(location.origin + '/light.gif', function(gif) {
-    		var gif = runGif(gif);
+        loadGif(location.origin + '/light.gif', function(gif) {
+            var gif = runGif(gif);
             document.body.appendChild(gif);
-    	});
+        });
     });
 
 })(window);
