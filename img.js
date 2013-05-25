@@ -421,6 +421,10 @@
             context.flush();
         }
 
+        var blocks = {};
+        blocks[0x21] = parseExtension;
+        blocks[0x2C] = parseImageBlock;
+
         function parseGif(stream) {
             var gif = {};
 
@@ -449,22 +453,14 @@
             }
 
             resetContext();
-            var go = true;
-            while (go) {
+            while (true) {
                 var blockType = readByte(stream);
-                switch (blockType) {
-                    case 0x3B: // Image trailer
-                    go = false;
+                if (blockType == 0x3B)
                     break;
-                    case 0x21: // Extension
-                    parseExtension(gif, context, stream);
-                    break;
-                    case 0x2C: // Image block
-                    parseImageBlock(gif, context, stream);
-                    break;
-                    default: // Unknown block
-                    break;
-                }
+
+                var func = blocks[blockType];
+                if (func)
+                    func(gif, context, stream);
             }
 
             return gif;
