@@ -566,6 +566,8 @@
             global.postMessage({
                 type: "finished",
             });
+
+            changeState(null);
         }
 
         var state = "header";
@@ -577,7 +579,7 @@
         function tryParse(stream) {
             stream.save();
             var wantsRestore = false;
-            while (state !== "finished") {
+            while (state) {
                 var func = states[state];
                 try {
                     func(stream);
