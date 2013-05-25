@@ -536,13 +536,21 @@
             return gif;
         }
 
+        function makeChunkFromText(text) {
+            var arr = new Uint8Array(text.length);
+            for (var i = 0; i < text.length; i++)
+                arr[i] = text.charCodeAt(i) & 0xFF;
+            return arr.buffer;
+        }
+
         function fetch(stream, path, callback) {
             var req = new XMLHttpRequest();
             req.open("GET", path, true);
-            req.responseType = "arraybuffer";
+            req.overrideMimeType('text/plain; charset=x-user-defined');
             req.send();
             req.onload = function() {
-                stream.addChunk(req.response);
+                var chunk = makeChunkFromText(req.responseText);
+                stream.addChunk(chunk);
                 callback();
             };
             return req;
