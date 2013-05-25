@@ -14,19 +14,85 @@
             global.postMessage({ log: [].slice.call(arguments) });
         }
 
-        function makeStream(buffer) {
-            var stream = new DataView(buffer);
-            stream.length = buffer.byteLength;
-            stream.pos = 0;
-            return stream;
+        function Stream() {
+            this._chunks = [];
+            this._pos = 0;
+            this._chunkPos = 0;
+            this._currentChunk = null;
+            this._savedPos = [];
         }
+        Stream.prototype = {
+            get pos() {
+                return this._pos;
+            },
+
+            set pos(value) {
+                this._pos = value;
+                this._updateChunk();
+            },
+
+            _findChunkForPos: function(pos) {
+                for (var i = 0; i < this._chunks.length; i++) {
+                    var chunk = this._chunks[i];
+                    if (pos < chunk.end)
+                        return chunk;
+                }
+                return null;
+            },
+
+            _updateChunk: function() {
+                this._currentChunk = this._findChunkForPos(this._pos);
+                if (this._currentChunk)
+                    this._chunkPos = this._pos - this._currentChunk.start;
+            },
+
+            addChunk: function(buffer) {
+                var chunk = new DataView(buffer);
+                if (this._chunks.length)
+                    chunk.start = this._chunks[this._chunks.length - 1].end;
+                else
+                    chunk.start = 0;
+                chunk.end = chunk.start + chunk.buffer.byteLength;
+                this._chunks.push(chunk);
+                this._updateChunk();
+            },
+
+            save: function() {
+                this._savedPos.push(this.pos);
+            },
+
+            restore: function() {
+                this.pos = this._savedPos.pop();
+            },
+
+            readByte: function() {
+                var x = this._currentChunk.getUint8(this._chunkPos);
+                this.pos++;
+                return x;
+            },
+
+            readWord: function() {
+                var x;
+                try {
+                    x = this._currentChunk.getUint16(this._chunkPos, true);
+                    this.pos += 2;
+                } catch(e) {
+                    // Slow path -- word falls across chunk boundaries
+                    x = this._currentChunk.getUint8(this._chunkPos);
+                    this.pos++;
+                    x |= this._currentChunk.getUint8(this._chunkPos) << 8;
+                    this.pos++;
+                }
+                return x;
+            },
+        };
 
         function readByte(stream) {
-            return stream.getUint8(stream.pos++);
+            return stream.readByte();
         }
 
         function readWord(stream) {
-            return stream.getUint16((stream.pos += 2) - 2, true);
+            return stream.readWord();
         }
 
         function collect(stream, f, length) {
@@ -478,10 +544,19 @@
             return request;
         }
 
+        function chunkify(stream, buffer) {
+            var s = 0;
+            while (s < buffer.byteLength) {
+                stream.addChunk(buffer.slice(s, s+256));
+                s += 256;
+            }
+        }
+
         global.onmessage = function(event) {
             var req = fetch(event.data.filename);
             req.onload = function() {
-                var stream = makeStream(req.response);
+                var stream = new Stream();
+                chunkify(stream, req.response);
                 var gif = parseGif(stream);
                 global.postMessage({ gif: gif });
             };
