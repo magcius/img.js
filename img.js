@@ -341,7 +341,7 @@
         // Early GIF specs said "bit 3" instead of "third bit"
         disposals[0x04] = "remove";
 
-        function parseGraphicControlExtension(gif, command, stream) {
+        function parseGraphicControlExtension(command, stream) {
             // size, unused
             readByte(stream);
 
@@ -364,7 +364,7 @@
             stream.pos++;
         }
 
-        function parseCommentExtension(gif, command, stream) {
+        function parseCommentExtension(command, stream) {
             command.type = "comment";
             command.data = "";
 
@@ -376,7 +376,7 @@
             }
         }
 
-        function parsePlainTextExtension(gif, command, stream) {
+        function parsePlainTextExtension(command, stream) {
             command.type = "text";
 
             // size, unused
@@ -391,7 +391,6 @@
 
             command.fgColor = readByte(stream);
             command.bgColor = readByte(stream);
-            command.colorTable = gif.globalColorTable;
             command.data = "";
 
             while (true) {
@@ -404,7 +403,7 @@
             command.flush();
         }
 
-        function parseNetscapeExtension(gif, command, stream) {
+        function parseNetscapeExtension(command, stream) {
             // auth code, unused
             stream.pos += 3;
 
@@ -412,10 +411,10 @@
             stream.pos += 2;
 
             var loopCount = readWord(stream);
-            if (loopCount == 0)
-                gif.infinite = true;
-            else
-                gif.loopCount = loopCount;
+            global.postMessage({
+                type: "looping",
+                loopCount: loopCount,
+            });
 
             // block terminator
             stream.pos++;
@@ -424,7 +423,7 @@
         var appExtensions = {};
         appExtensions["NETSCAPE"] = parseNetscapeExtension;
 
-        function parseApplicationExtension(gif, command, stream) {
+        function parseApplicationExtension(command, stream) {
             // size, unused
             readByte(stream);
 
@@ -432,7 +431,7 @@
 
             var func = appExtensions[identifier];
             if (func)
-                func(gif, command, stream);
+                func(command, stream);
             else
                 seekUntil0(stream);
         }
@@ -443,24 +442,24 @@
         extensions[0xFE] = parseCommentExtension;
         extensions[0xFF] = parseApplicationExtension;
 
-        function parseExtension(gif, command, stream) {
+        function parseExtension(command, stream) {
             var extensionType = readByte(stream);
 
             var func = extensions[extensionType];
             if (func)
-                func(gif, command, stream);
+                func(command, stream);
             else
                 seekUntil0(stream);
         }
 
-        function parseImageBlock(gif, command, stream) {
+        function parseImageBlock(command, stream) {
             command.type = "draw";
             command.left = readWord(stream);
             command.top = readWord(stream);
             command.width = readWord(stream);
             command.height = readWord(stream);
             var flags = readByte(stream);
-            command.colorTable = parseColorTable(stream, flags) || gif.globalColorTable;
+            command.lct = parseColorTable(stream, flags);
 
             var minCodeSize = readByte(stream);
             var pos, size;
@@ -498,18 +497,26 @@
         blocks[0x2C] = parseImageBlock;
 
         function parseGif(stream) {
-            var gif = {};
-
             var header = readString(stream, 3);
             var version = readString(stream, 3);
-            gif.width = readWord(stream);
-            gif.height = readWord(stream);
+            var width = readWord(stream);
+            var height = readWord(stream);
+
+            global.postMessage({
+                type: "dimensions",
+                width: width,
+                height: height,
+            });
+
             var flags = readByte(stream);
             var bgColor = readByte(stream); // unused
             var pixelAspectRatio = readByte(stream);
-            gif.globalColorTable = parseColorTable(stream, flags);
+            var gct = parseColorTable(stream, flags);
 
-            gif.commands = [];
+            global.postMessage({
+                type: "gct",
+                gct: gct,
+            });
 
             var command;
             function resetCommand() {
@@ -518,7 +525,10 @@
 
             function flush() {
                 delete command.flush;
-                gif.commands.push(command);
+                global.postMessage({
+                    type: "command",
+                    command: command,
+                });
                 resetCommand();
             }
 
@@ -530,10 +540,12 @@
 
                 var func = blocks[blockType];
                 if (func)
-                    func(gif, command, stream);
+                    func(command, stream);
             }
 
-            return gif;
+            global.postMessage({
+                type: "finished",
+            });
         }
 
         function makeChunkFromText(text) {
@@ -559,8 +571,7 @@
         global.onmessage = function(event) {
             var stream = new Stream();
             var req = fetch(stream, event.data.filename, function() {
-                var gif = parseGif(stream);
-                global.postMessage({ gif: gif });
+                parseGif(stream);
             });
         };
     }
@@ -570,8 +581,8 @@
         w.addEventListener('message', function(event) {
             if (event.data.log)
                 console.log("worker log", event.data.log);
-            else if (event.data.gif)
-                callback(event.data.gif);
+            else
+                callback(event.data);
         });
         w.postMessage({ filename: filename });
     }
@@ -582,14 +593,39 @@
         var container = document.createElement("gif-container");
         container.style.position = "relative";
 
-        function makeCanvas(gif) {
+        var width, height;
+        var gct;
+
+        // Images from composite commands are added to the
+        // temporary canvas first, and at the start of a new
+        // composite command, they're "disposed" of into the
+        // composite canvas if necessary.
+        var compositeCanvas, temporaryCanvas;
+
+        var commands = [];
+
+        // By default, loop forever.
+        var maxLoops = 0;
+
+        var finished = false;
+        var waitingForCommand = true;
+
+        function makeCanvas() {
             var canvas = document.createElement("canvas");
-            canvas.width = gif.width;
-            canvas.height = gif.height;
+            canvas.width = width;
+            canvas.height = height;
             canvas.style.position = "absolute";
             canvas.style.left = "0px";
             canvas.style.top = "0px";
             return canvas;
+        }
+
+        function makeCanvases() {
+            compositeCanvas = makeCanvas();
+            temporaryCanvas = makeCanvas();
+
+            container.appendChild(compositeCanvas);
+            container.appendChild(temporaryCanvas);
         }
 
         function disposeImage(tempCanvas, compCanvas, command) {
@@ -628,6 +664,8 @@
             var imgData = ctx.getImageData(command.left, command.top, command.width, command.height);
             var i, o = 0, n = command.indices.length;
             var data = imgData.data;
+            var colorTable = command.lct || gct;
+
             for (i = 0; i < n; i++) {
                 var index = command.indices[i];
                 if (index == command.transparentPixel) {
@@ -636,9 +674,9 @@
                     data[o++] = 0;
                     data[o++] = 0;
                 } else {
-                    data[o++] = command.colorTable[index].r;
-                    data[o++] = command.colorTable[index].g;
-                    data[o++] = command.colorTable[index].b;
+                    data[o++] = colorTable[index].r;
+                    data[o++] = colorTable[index].g;
+                    data[o++] = colorTable[index].b;
                     data[o++] = 255;
                 }
             }
@@ -654,7 +692,7 @@
             }
 
             function styleFromColor(idx) {
-                var color = command.colorTable[idx];
+                var color = gct[idx];
                 return 'rgb(' + color.r + ', ' + color.g + ', ' + color.b + ')';
             }
 
@@ -689,7 +727,7 @@
             ctx.restore();
         }
 
-        var commands = {
+        var commandTypes = {
             "draw": drawCommand,
             "text": textCommand,
         };
@@ -698,68 +736,103 @@
         var DEFAULT_DURATION = (1 / 10) * 1000;
         var MIN_DURATION = 20;
 
-        function run(gif) {
-            var command;
-            var idx = 0;
-            var loopCount = 0;
+        var command;
+        var idx = 0;
+        var loopCount = 0;
 
-            // Images from composite commands are added to the
-            // temporary canvas first, and at the start of a new
-            // composite command, they're "disposed" of into the
-            // composite canvas if necessary.
-            var compositeCanvas = makeCanvas(gif);
-            var temporaryCanvas = makeCanvas(gif);
-
-            container.appendChild(compositeCanvas);
-            container.appendChild(temporaryCanvas);
-
-            function runCommand() {
-                command = gif.commands[idx];
-                var func = commands[command.type];
-                if (func) {
-                    // Commands are always first drawn into the temp
-                    // canvas. The disposal at the start of the next
-                    // next command will put things into the
-                    // composite canvas if wanted.
-                    func(temporaryCanvas, command);
-                } else {
-                    console.log("Unknown command " + command.type);
-                }
-
-                scheduleNextCommand();
+        function runCommand() {
+            command = commands[idx];
+            var func = commandTypes[command.type];
+            if (func) {
+                // Commands are always first drawn into the temp
+                // canvas. The disposal at the start of the next
+                // next command will put things into the
+                // composite canvas if wanted.
+                func(temporaryCanvas, command);
+            } else {
+                console.log("Unknown command " + command.type);
             }
 
-            function nextCommand() {
-                idx++;
-                if (idx >= gif.commands.length) {
+            scheduleNextCommand();
+        }
+
+        function nextCommand() {
+            if (idx+1 >= commands.length) {
+                if (finished) {
                     loopCount++;
 
                     // If we've reached the maximum loop, pause at the
                     // last frame.
-                    if (!gif.infinite && loopCount > gif.loopCount)
+                    if (maxLoops != 0 && loopCount > maxLoops)
                         return;
 
                     idx = 0;
+                } else {
+                    // Pause until we receive the next command.
+                    waitingForCommand = true;
                 }
+            } else {
+                idx++;
+            }
 
+            if (command)
                 disposeImage(temporaryCanvas, compositeCanvas, command);
-                runCommand();
-            }
-
-            function scheduleNextCommand() {
-                var duration = command.duration;
-                if (duration === undefined || duration < MIN_DURATION)
-                    duration = DEFAULT_DURATION;
-
-                setTimeout(nextCommand, duration);
-            }
-
             runCommand();
         }
 
-        loadGif(filename, function(gif) {
-            run(gif);
-        });
+        function scheduleNextCommand() {
+            var duration = command.duration;
+            if (duration === undefined || duration < MIN_DURATION)
+                duration = DEFAULT_DURATION;
+
+            setTimeout(nextCommand, duration);
+        }
+
+        function maybeUnpause() {
+            if (!waitingForCommand)
+                return;
+
+            nextCommand();
+            waitingForCommand = false;
+        }
+
+        function onMessage_dimensions(message) {
+            width = message.width;
+            height = message.height;
+            makeCanvases();
+        }
+
+        function onMessage_gct(message) {
+            gct = message.gct;
+        }
+
+        function onMessage_looping(message) {
+            maxLoops = message.loopCount;
+        }
+
+        function onMessage_command(message) {
+            commands.push(message.command);
+            maybeUnpause();
+        }
+
+        function onMessage_finished(message) {
+            finished = true;
+            maybeUnpause();
+        }
+
+        var messages = {};
+        messages["dimensions"] = onMessage_dimensions;
+        messages["gct"] = onMessage_gct;
+        messages["looping"] = onMessage_looping;
+        messages["command"] = onMessage_command;
+        messages["finished"] = onMessage_finished;
+
+        function onMessage(message) {
+            var func = messages[message.type];
+            func(message);
+        }
+
+        loadGif(filename, onMessage);
 
         return container;
     }
