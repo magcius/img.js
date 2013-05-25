@@ -536,30 +536,24 @@
             return gif;
         }
 
-        function fetch(path) {
-            var request = new XMLHttpRequest();
-            request.open("GET", path, true);
-            request.responseType = "arraybuffer";
-            request.send();
-            return request;
-        }
-
-        function chunkify(stream, buffer) {
-            var s = 0;
-            while (s < buffer.byteLength) {
-                stream.addChunk(buffer.slice(s, s+256));
-                s += 256;
-            }
+        function fetch(stream, path, callback) {
+            var req = new XMLHttpRequest();
+            req.open("GET", path, true);
+            req.responseType = "arraybuffer";
+            req.send();
+            req.onload = function() {
+                stream.addChunk(req.response);
+                callback();
+            };
+            return req;
         }
 
         global.onmessage = function(event) {
-            var req = fetch(event.data.filename);
-            req.onload = function() {
-                var stream = new Stream();
-                chunkify(stream, req.response);
+            var stream = new Stream();
+            var req = fetch(stream, event.data.filename, function() {
                 var gif = parseGif(stream);
                 global.postMessage({ gif: gif });
-            };
+            });
         };
     }
 
