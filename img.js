@@ -416,6 +416,11 @@
             command.indices = new Uint8Array(command.width * command.height);
             parseLzw(command.indices, readByteFromSubBlocks, minCodeSize);
 
+            // LZW might have an EOF code before we read the entire
+            // set of sub blocks. Look for a block terminator.
+            if (pos !== 0)
+                seekUntil0(stream);
+
             command.flush();
         }
 
