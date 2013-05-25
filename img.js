@@ -591,12 +591,16 @@
             function runCommand() {
                 command = gif.commands[idx];
                 var func = commands[command.type];
+                if (func) {
+                    // Commands are always first drawn into the temp
+                    // canvas. The disposal at the start of the next
+                    // next command will put things into the
+                    // composite canvas if wanted.
+                    func(temporaryCanvas, command);
+                } else {
+                    console.log("Unknown command " + command.type);
+                }
 
-                // Commands are always first drawn into the temp
-                // canvas. The disposal at the start of the next
-                // next command will put things into the
-                // composite canvas if wanted.
-                func(temporaryCanvas, command);
                 scheduleNextCommand();
             }
 
