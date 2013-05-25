@@ -14,6 +14,7 @@
             global.postMessage({ log: [].slice.call(arguments) });
         }
 
+        var NotEnoughData = {};
         function Stream() {
             this._chunks = [];
             this._pos = 0;
@@ -65,9 +66,18 @@
                 this.pos = this._savedPos.pop();
             },
 
+            pop: function() {
+                this._savedPos.pop();
+            },
+
             readByte: function() {
-                var x = this._currentChunk.getUint8(this._chunkPos);
-                this.pos++;
+                var x;
+                try {
+                    x = this._currentChunk.getUint8(this._chunkPos);
+                    this.pos++;
+                } catch(e) {
+                    throw NotEnoughData;
+                }
                 return x;
             },
 
@@ -77,11 +87,15 @@
                     x = this._currentChunk.getUint16(this._chunkPos, true);
                     this.pos += 2;
                 } catch(e) {
-                    // Slow path -- word falls across chunk boundaries
-                    x = this._currentChunk.getUint8(this._chunkPos);
-                    this.pos++;
-                    x |= this._currentChunk.getUint8(this._chunkPos) << 8;
-                    this.pos++;
+                    try {
+                        // Slow path -- word falls across chunk boundaries
+                        x = this._currentChunk.getUint8(this._chunkPos);
+                        this.pos++;
+                        x |= this._currentChunk.getUint8(this._chunkPos) << 8;
+                        this.pos++;
+                    } catch(e) {
+                        throw NotEnoughData;
+                    }
                 }
                 return x;
             },
@@ -492,11 +506,23 @@
             frame.flush();
         }
 
-        var blocks = {};
-        blocks[0x21] = parseExtension;
-        blocks[0x2C] = parseImageBlock;
+        var frame;
+        function resetFrame() {
+            frame = { flush: flush };
+        }
 
-        function parseGif(stream) {
+        function flush() {
+            delete frame.flush;
+            global.postMessage({
+                type: "frame",
+                frame: frame,
+            });
+            resetFrame();
+        }
+
+        resetFrame();
+
+        function stateHeader(stream) {
             var header = readString(stream, 3);
             var version = readString(stream, 3);
             var width = readWord(stream);
@@ -511,6 +537,7 @@
             var flags = readByte(stream);
             var bgColor = readByte(stream); // unused
             var pixelAspectRatio = readByte(stream);
+
             var gct = parseColorTable(stream, flags);
 
             global.postMessage({
@@ -518,34 +545,62 @@
                 gct: gct,
             });
 
-            var frame;
-            function resetFrame() {
-                frame = { flush: flush };
-            }
+            changeState("block");
+        }
 
-            function flush() {
-                delete frame.flush;
-                global.postMessage({
-                    type: "frame",
-                    frame: frame,
-                });
-                resetFrame();
-            }
+        var blocks = {};
+        blocks[0x21] = parseExtension;
+        blocks[0x2C] = parseImageBlock;
 
-            resetFrame();
-            while (true) {
-                var blockType = readByte(stream);
-                if (blockType == 0x3B)
-                    break;
+        function stateBlock(stream) {
+            var blockType = readByte(stream);
+            if (blockType == 0x3B)
+                changeState("finished");
 
-                var func = blocks[blockType];
-                if (func)
-                    func(frame, stream);
-            }
+            var func = blocks[blockType];
+            if (func)
+                func(frame, stream);
+        }
 
+        function stateFinished(stream) {
             global.postMessage({
                 type: "finished",
             });
+        }
+
+        var state = "header";
+        var states = {};
+        states["header"] = stateHeader;
+        states["block"] = stateBlock;
+        states["finished"] = stateFinished;
+
+        function tryParse(stream) {
+            stream.save();
+            var wantsRestore = false;
+            while (state !== "finished") {
+                var func = states[state];
+                try {
+                    func(stream);
+                } catch(e) {
+                    // If we don't have enough data, wait
+                    // until we get some.
+                    if (e === NotEnoughData) {
+                        wantsRestore = true;
+                        break;
+                    } else {
+                        throw e;
+                    }
+                }
+            }
+
+            if (wantsRestore)
+                stream.restore();
+            else
+                stream.pop();
+        }
+
+        function changeState(to) {
+            state = to;
         }
 
         function makeChunkFromText(text) {
@@ -555,24 +610,25 @@
             return arr.buffer;
         }
 
-        function fetch(stream, path, callback) {
+        function fetch(path) {
+            var stream = new Stream();
             var req = new XMLHttpRequest();
             req.open("GET", path, true);
             req.overrideMimeType('text/plain; charset=x-user-defined');
             req.send();
-            req.onload = function() {
-                var chunk = makeChunkFromText(req.responseText);
+            var lastPosition = 0;
+            req.onprogress = function(e) {
+                var position = e.loaded;
+                var text = req.responseText.slice(lastPosition, position);
+                lastPosition = position;
+                var chunk = makeChunkFromText(text);
                 stream.addChunk(chunk);
-                callback();
+                tryParse(stream);
             };
-            return req;
         }
 
         global.onmessage = function(event) {
-            var stream = new Stream();
-            var req = fetch(stream, event.data.filename, function() {
-                parseGif(stream);
-            });
+            fetch(event.data.filename);
         };
     }
 
