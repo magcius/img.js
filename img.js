@@ -545,7 +545,7 @@
                 gct: gct,
             });
 
-            changeState("block");
+            state = "block";
         }
 
         var blocks = {};
@@ -555,7 +555,7 @@
         function stateBlock(stream) {
             var blockType = readByte(stream);
             if (blockType == 0x3B)
-                changeState("finished");
+                state  = "finished";
 
             var func = blocks[blockType];
             if (func)
@@ -567,7 +567,7 @@
                 type: "finished",
             });
 
-            changeState(null);
+            state = null;
         }
 
         var state = "header";
@@ -599,10 +599,6 @@
                 stream.restore();
             else
                 stream.pop();
-        }
-
-        function changeState(to) {
-            state = to;
         }
 
         function makeChunkFromText(text) {
