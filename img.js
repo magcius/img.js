@@ -325,12 +325,14 @@
 
             command.fgColor = readByte(stream);
             command.bgColor = readByte(stream);
+            command.colorTable = gif.globalColorTable;
+            command.data = "";
 
             while (true) {
                 var size = readByte(stream);
                 if (size == 0)
                     break;
-                command.data += readString(size);
+                command.data += readString(stream, size);
             }
 
             command.flush();
@@ -510,28 +512,6 @@
             return canvas;
         }
 
-        function drawCommand(canvas, command) {
-            var ctx = canvas.getContext('2d');
-            var imgData = ctx.getImageData(command.left, command.top, command.width, command.height);
-            var i, o = 0, n = command.indices.length;
-            var data = imgData.data;
-            for (i = 0; i < n; i++) {
-                var index = command.indices[i];
-                if (index == command.transparentPixel) {
-                    data[o++] = 0;
-                    data[o++] = 0;
-                    data[o++] = 0;
-                    data[o++] = 0;
-                } else {
-                    data[o++] = command.colorTable[index].r;
-                    data[o++] = command.colorTable[index].g;
-                    data[o++] = command.colorTable[index].b;
-                    data[o++] = 255;
-                }
-            }
-            ctx.putImageData(imgData, command.left, command.top);
-        }
-
         function disposeImage(tempCanvas, compCanvas, command) {
             var tempCtx = tempCanvas.getContext('2d');
             var compCtx = compCanvas.getContext('2d');
@@ -563,8 +543,75 @@
             tempCtx.clearRect(0, 0, tempCanvas.width, tempCanvas.height);
         }
 
+        function drawCommand(canvas, command) {
+            var ctx = canvas.getContext('2d');
+            var imgData = ctx.getImageData(command.left, command.top, command.width, command.height);
+            var i, o = 0, n = command.indices.length;
+            var data = imgData.data;
+            for (i = 0; i < n; i++) {
+                var index = command.indices[i];
+                if (index == command.transparentPixel) {
+                    data[o++] = 0;
+                    data[o++] = 0;
+                    data[o++] = 0;
+                    data[o++] = 0;
+                } else {
+                    data[o++] = command.colorTable[index].r;
+                    data[o++] = command.colorTable[index].g;
+                    data[o++] = command.colorTable[index].b;
+                    data[o++] = 255;
+                }
+            }
+            ctx.putImageData(imgData, command.left, command.top);
+        }
+
+        function textCommand(canvas, command) {
+            var ctx = canvas.getContext('2d');
+
+            function setFont() {
+                var size = command.cellHeight;
+                ctx.font = size + "px \"Courier New\"";
+            }
+
+            function styleFromColor(idx) {
+                var color = command.colorTable[idx];
+                return 'rgb(' + color.r + ', ' + color.g + ', ' + color.b + ')';
+            }
+
+            function drawChar(char, cellX, cellY) {
+                var x = command.left + command.cellWidth * cellX;
+                var y = command.top + command.cellHeight * cellY;
+
+                var code = char.charCodeAt(0);
+                ctx.fillText(char, x, y);
+            }
+
+            ctx.save();
+            ctx.fillStyle = styleFromColor(command.bgColor);
+            ctx.fillRect(command.left, command.top, command.width, command.height);
+            ctx.restore();
+
+            ctx.save();
+            setFont();
+            ctx.fillStyle = styleFromColor(command.fgColor);
+            var cellX = 0, cellY = 0;
+            var charsPerLine = (command.width / command.cellWidth) | 0;
+
+            command.data.split('').forEach(function(char) {
+                drawChar(char, cellX, cellY);
+
+                cellX++;
+                if (cellX > charsPerLine) {
+                    cellY++;
+                    cellX = 0;
+                }
+            });
+            ctx.restore();
+        }
+
         var commands = {
             "draw": drawCommand,
+            "text": textCommand,
         };
 
         // default duration is 1/10th of a second
