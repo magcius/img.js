@@ -163,7 +163,7 @@
             // Note that the bits are in reverse order, with the
             // most significant bit being at the right-hand side.
             // This means that it isn't just a simple mask and shift,
-            // but reuqires
+            // but requires reversing all the bits in a tight loop.
 
             // Contains the most recently read byte from the stream.
             // This always contains the whole byte and should always
