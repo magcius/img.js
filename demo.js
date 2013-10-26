@@ -11,7 +11,7 @@
 	            document.body.appendChild(gif);
 	        });
 	    } else {
-	    	var jpgs = ['Craig.jpg'];
+	    	var jpgs = ['lenaTest3.jpg'];
 	    	jpgs.forEach(function(filename) {
 	    		var uri = base + filename;
 	    		var jpg = loadJpeg(uri);
