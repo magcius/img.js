@@ -86,7 +86,7 @@
             var width = jpeg.expandedWidth / component.horzSample;
             var height = jpeg.expandedHeight / component.vertSample;
             var size = width * height;
-            component.plane = new Int8Array(size);
+            component.plane = new Uint8Array(size);
 
             jpeg.components[id] = component;
         }
@@ -272,12 +272,15 @@
         58, 59, 52, 45, 38, 31, 39, 46,
     ];
 
-    function readDCCoefficient(coeffs, state, readBits) {
+    function readDCOffset(coeffs, state, readBits) {
         var nBits = readHuffmanBitstream(readBits, state.dcTable);
         var pattern = readBits(nBits);
         var number = decodeJPEGNumber(nBits, pattern);
         state.predictedDC += number;
-        coeffs[0] = state.predictedDC; // * state.quantTable[0];
+
+        // The DC offset is signed, but it's really a pixel value,
+        // so bump it up to a 0-255 range by adding 127.
+        coeffs[0] = (127 + state.predictedDC) * state.quantTable[0];
     }
 
     function readACCoefficients(coeffs, state, readBits) {
@@ -324,41 +327,57 @@
     // See http://tauday.com/
     var TAU = Math.PI * 2;
 
-    function idct(pixels, src) {
-        function idct_1d(dest, coeffs, offset, step) {
-            var N = 8;
-            var n;
+    function idct(pixels, coeffs) {
+        var x, y;
+        var N = 8;
 
-            // We start with all pixel values having the DC offset.
-            for (n = 0; n < N; n++)
-                dest[offset + n*step] = coeffs[0];
+        for (y = 0; y < N; y++) {
+            for (x = 0; x < N; x++) {
+                // We start with all pixel values having the DC offset.
+                // XXX -- figure out what the divide by two is for. Probably
+                // related to the divide by sqrt(2), as we have kx=0 and ky=0,
+                // so it's effectively coeffs[0]/(sqrt(2)*sqrt(2)).
+                var pix = coeffs[0] / 2.0;
 
-            // The rest are frequency coefficients; sum them up one
-            // at a time.
-            for (var k = 1; k < N; k++) {
-                // Normalize the coefficient from 0 to 1.
-                var coef = coeffs[offset + k*step] / 256.0;
+                // The rest are AC frequency coefficients; sum them up one
+                // at a time.
+                for (var ky = 0; ky < N; ky++) {
+                    for (var kx = 0; kx < N; kx++) {
+                        // Skip the DC offset as it's already been added above.
+                        if (kx == 0 && ky == 0)
+                            continue;
 
-                // DCT-II says that the basis functions we use are
-                // cosines with increasing 1/4 frequencies.
-                var frequency = TAU * (1/4) * k;
+                        // The DCT-II requires that our basis functions are
+                        // increase in frequency in quarter-length increments.
+                        var freqX = (kx * TAU * (1/4));
+                        var freqY = (ky * TAU * (1/4));
 
-                for (n = 0; n < N; n++) {
-                    var theta = (2*n+1) / N;
-                    dest[offset + n*step] += coef * Math.cos(frequency * theta);
+                        // ... and that we use odds as our harmonics, like this.
+                        var harmonicX = Math.cos((2*x+1) / N * freqX);
+                        var harmonicY = Math.cos((2*y+1) / N * freqY);
+
+                        var coef = coeffs[ky*N+kx];
+                        var weightedHarmonic = coef * harmonicX * harmonicY;
+
+                        // XXX -- figure out what this is here for; seems arbitrary,
+                        // but we get bad edge discontinuities without it.
+                        if (kx == 0 || ky == 0)
+                            weightedHarmonic /= Math.sqrt(2);
+
+                        pix += weightedHarmonic;
+                    }
                 }
+
+                // XXX -- figure out what this division is for. Is it related
+                // to the 1/4 frequency increment in the harmonics above?
+                pix /= 4;
+                if (pix > 255)
+                    pix = 255;
+                if (pix < 0)
+                    pix = 0;
+                pixels[y*N+x] = pix;
             }
         }
-
-        var tmp = new Array(64);
-
-        // First do all the rows
-        for (var i = 0; i < 8; i++)
-            idct_1d(tmp, src, i*8, 1);
-
-        // Now all the columns
-        for (var i = 0; i < 8; i++)
-            idct_1d(pixels, tmp, i, 8);
     }
 
     // Minimum Coded Unit. This includes all component planes.
@@ -366,8 +385,8 @@
         mcuLayout.forEach(function(mcu) {
             var scanComponent = mcu.scanComponent;
             var plane = scanComponent.plane;
-            var coeffs = new Int8Array(64);
-            readDCCoefficient(coeffs, scanComponent, readBits);
+            var coeffs = new Int16Array(64);
+            readDCOffset(coeffs, scanComponent, readBits);
             readACCoefficients(coeffs, scanComponent, readBits);
 
             var offset = plane.byteOffset + planeOffset + mcu.offset;
